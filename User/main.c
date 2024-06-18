@@ -21,20 +21,6 @@
 #include "debug.h"
 
 
-/* Global typedef */
-
-/* Global define */
-
-/* Global Variable */
-
-
-/*********************************************************************
- * @fn      main
- *
- * @brief   Main program.
- *
- * @return  none
- */
 
 void GPIO_Sencer_INIT(void)
 {
@@ -68,6 +54,14 @@ void GPIO_Sencer_INIT(void)
  *
  */
 
+#define MODE_PIN    0x0001
+#define ERR_PIN     0x0002
+#define IN1B_PIN    0x0004
+#define IN2B_PIN    0x0008
+#define IN1A_PIN    0x0010
+#define IN2A_PIN    0x0020
+#define STBY_PIN    0x0040
+
 void GPIO_Motor_INIT(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure = {0};
@@ -76,18 +70,18 @@ void GPIO_Motor_INIT(void)
 
     // Output
     GPIO_InitStructure.GPIO_Pin =
-            GPIO_Pin_0 ||
-            GPIO_Pin_2 ||
-            GPIO_Pin_3 ||
-            GPIO_Pin_4 ||
-            GPIO_Pin_5 ||
-            GPIO_Pin_6;
+            MODE_PIN ||
+            IN1B_PIN ||
+            IN2B_PIN ||
+            IN1A_PIN ||
+            IN2A_PIN ||
+            STBY_PIN;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
     // Input
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_1;
+    GPIO_InitStructure.GPIO_Pin = ERR_PIN;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
@@ -97,8 +91,18 @@ void GPIO_Motor_INIT(void)
 
 void Motor_Forward()
 {
-    GPIO_SetBits(GPIOA, GPIO_Pin_4 || GPIO_Pin_2);
-    GPIO_ResetBits(GPIOA, GPIO_Pin_5 || GPIO_Pin_3);
+    GPIO_SetBits(GPIOA, IN1A_PIN || IN1B_PIN);
+    GPIO_ResetBits(GPIOA, IN2A_PIN || IN2B_PIN);
+}
+
+void Motor_Brake()
+{
+    GPIO_SetBits(GPIOA,
+            IN1A_PIN ||
+            IN1B_PIN ||
+            IN2A_PIN ||
+            IN2B_PIN
+    );
 }
 
 int main(void)
@@ -117,7 +121,7 @@ int main(void)
 	while(1)
     {
 	    // Skip if there is an error
-	    if(GPIO_ReadInputDataBit(GPIOA, GPIO_Pin_1))
+	    if(!GPIO_ReadInputDataBit(GPIOA, ERR_PIN))
 	    {
 	        GPIO_WriteBit(GPIOA, GPIO_Pin_6, Bit_RESET);
 	        continue;
