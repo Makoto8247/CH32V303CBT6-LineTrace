@@ -28,13 +28,13 @@ void GPIO_Sencer_INIT(void)
 
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
     GPIO_InitStructure.GPIO_Pin =
-            GPIO_Pin_0 ||
-            GPIO_Pin_1 ||
-            GPIO_Pin_2 ||
-            GPIO_Pin_3 ||
-            GPIO_Pin_4 ||
-            GPIO_Pin_5 ||
-            GPIO_Pin_6 ||
+            GPIO_Pin_0 |
+            GPIO_Pin_1 |
+            GPIO_Pin_2 |
+            GPIO_Pin_3 |
+            GPIO_Pin_4 |
+            GPIO_Pin_5 |
+            GPIO_Pin_6 |
             GPIO_Pin_7;
 
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
@@ -43,24 +43,41 @@ void GPIO_Sencer_INIT(void)
     GPIO_Init(GPIOB, &GPIO_InitStructure);
 }
 
+#define LED_PIN 0x2000
+void GPIO_LED_INIT(void)
+{
+    GPIO_InitTypeDef GPIO_InitStructure = {0};
+
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
+
+    GPIO_InitStructure.GPIO_Pin = LED_PIN;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOC, &GPIO_InitStructure);
+}
+
 /************** Motor Pin **********************
- * MODE -> GPIOA0
- * ERR  -> GPIOA1 (INPUT) // H = NoErr, L = Err
- * IN1B -> GPIOA2
- * IN2B -> GPIOA3
- * IN1A -> GPIOA4
- * IN2A -> GPIOA5
- * STBY -> GPIOA6
+ * TB6612FNG
+ * MAX IOut : 1A
+ * MOTOR1 == MOTOR2 / 3
  *
+ * STBY -> GPIOA0
+ * PWMA -> GPIOA1
+ * PWMB -> GPIOA2
+ * AIN1 -> GPIOA3
+ * AIN2 -> GPIOA4
+ * BIN1 -> GPIOA5
+ * BIN2 -> GPIOA6
  */
 
-#define MODE_PIN    0x0001
-#define ERR_PIN     0x0002
-#define IN1B_PIN    0x0004
-#define IN2B_PIN    0x0008
-#define IN1A_PIN    0x0010
-#define IN2A_PIN    0x0020
-#define STBY_PIN    0x0040
+#define STBY_PIN    0x0001
+#define PWMA_PIN    0x0002
+#define PWMB_PIN    0x0004
+#define AIN1_PIN    0x0008
+#define AIN2_PIN    0x0010
+#define BIN1_PIN    0x0020
+#define BIN2_PIN    0x0040
+#define MOTOR_ARR   1440 - 1
 
 void GPIO_Motor_INIT(void)
 {
@@ -70,39 +87,146 @@ void GPIO_Motor_INIT(void)
 
     // Output
     GPIO_InitStructure.GPIO_Pin =
-            MODE_PIN ||
-            IN1B_PIN ||
-            IN2B_PIN ||
-            IN1A_PIN ||
-            IN2A_PIN ||
-            STBY_PIN;
+            STBY_PIN |
+            AIN1_PIN |
+            AIN2_PIN |
+            BIN1_PIN |
+            BIN2_PIN;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-    // Input
-    GPIO_InitStructure.GPIO_Pin = ERR_PIN;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
+    // PWM setting
+    TIM_OCInitTypeDef TIM_OCInitStructure = {0};
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure = {0};
+
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+
+    GPIO_InitStructure.GPIO_Pin =
+            PWMA_PIN |
+            PWMB_PIN;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-    // Mode -> IN
-    GPIO_WriteBit(GPIOA, GPIO_Pin_0, Bit_RESET);
+    TIM_TimeBaseInitStructure.TIM_Period = MOTOR_ARR; // 100kHz
+    TIM_TimeBaseInitStructure.TIM_Prescaler = 1;
+    TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
+    TIM_TimeBaseInit(TIM2, &TIM_TimeBaseInitStructure);
+
+    TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
+    TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
+    TIM_OCInitStructure.TIM_Pulse = 720 - 1; // 50%
+    TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;
+    TIM_OC2Init(TIM2, &TIM_OCInitStructure);
+    TIM_OC3Init(TIM2, &TIM_OCInitStructure);
+
+    TIM_CtrlPWMOutputs(TIM2, ENABLE);
+    TIM_OC2PreloadConfig(TIM2, TIM_OCPreload_Enable);
+    TIM_OC3PreloadConfig(TIM2, TIM_OCPreload_Enable);
+    TIM_ARRPreloadConfig(TIM2, ENABLE);
+    TIM_Cmd(TIM2, ENABLE);
+
+
+    GPIO_SetBits(GPIOA, STBY_PIN);
 }
+
+
+
 
 void Motor_Forward()
 {
-    GPIO_SetBits(GPIOA, IN1A_PIN || IN1B_PIN);
-    GPIO_ResetBits(GPIOA, IN2A_PIN || IN2B_PIN);
+    GPIOA -> BSHR =
+            STBY_PIN |
+            AIN2_PIN |
+            BIN2_PIN |
+            PWMA_PIN |
+            PWMB_PIN;
+    GPIOA -> BCR  =
+            AIN1_PIN |
+            BIN1_PIN;
+
+}
+
+void Motor_Back()
+{
+    GPIO_SetBits(GPIOA, BIN1_PIN || AIN1_PIN);
+    GPIO_ResetBits(GPIOA, AIN2_PIN || PWMB_PIN);
+}
+
+void Motor_Right()
+{
+    GPIO_SetBits(GPIOA, AIN2_PIN || BIN1_PIN || PWMB_PIN);
+    GPIO_ResetBits(GPIOA, AIN1_PIN);
+}
+
+void Motor_Left()
+{
+    GPIO_SetBits(GPIOA, AIN2_PIN || PWMB_PIN || AIN1_PIN);
+    GPIO_ResetBits(GPIOA, BIN1_PIN);
+}
+
+void Motor_TurnRight()
+{
+    GPIO_SetBits(GPIOA, BIN1_PIN || PWMB_PIN);
+    GPIO_ResetBits(GPIOA, AIN2_PIN || AIN1_PIN);
+}
+
+void Motor_TurnLeft()
+{
+    GPIO_SetBits(GPIOA, AIN2_PIN || AIN1_PIN);
+    GPIO_ResetBits(GPIOA, BIN1_PIN || PWMB_PIN);
 }
 
 void Motor_Brake()
 {
-    GPIO_SetBits(GPIOA,
-            IN1A_PIN ||
-            IN1B_PIN ||
-            IN2A_PIN ||
-            IN2B_PIN
-    );
+    GPIOA -> BSHR =
+                STBY_PIN |
+                AIN1_PIN |
+                AIN2_PIN |
+                BIN1_PIN |
+                BIN2_PIN |
+                PWMA_PIN |
+                PWMB_PIN;
+}
+
+/************** Line Angle **********************
+ *
+ * This function expresses the degree of curvature of the line in degrees.
+ * Returns a value of -1 ~ 180, with 0 representing the left, and 180 to the right.
+ * -1 indicates that all sensors are responding.
+ *
+ */
+
+int Line_Angle()
+{
+    uint8_t getSencer = GPIO_ReadInputData(GPIOB) & 0x00FF;
+    switch(getSencer)
+    {
+        case 0b00000000:
+        case 0b00011000:
+            return 90;
+            break;
+        // Left
+        case 0b00010000:
+            return 85;
+            break;
+        case 0b00110000:
+        case 0b11110000:
+            return 0;
+            break;
+        // Right
+        case 0b00001000:
+            return 95;
+            break;
+        case 0b00001111:
+            return 180;
+            break;
+        default:
+            return -1;
+            break;
+    }
+
 }
 
 int main(void)
@@ -110,26 +234,16 @@ int main(void)
 	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
 	SystemCoreClockUpdate();
 	Delay_Init();
-	USART_Printf_Init(115200);	
-	printf("SystemClk:%d\r\n",SystemCoreClock);
-	printf( "ChipID:%08x\r\n", DBGMCU_GetCHIPID() );
-	printf("This is printf example\r\n");
 
 	GPIO_Sencer_INIT();
 	GPIO_Motor_INIT();
+	GPIO_LED_INIT();
 
 	while(1)
     {
-	    // Skip if there is an error
-	    if(!GPIO_ReadInputDataBit(GPIOA, ERR_PIN))
-	    {
-	        GPIO_WriteBit(GPIOA, GPIO_Pin_6, Bit_RESET);
-	        continue;
-	    }
 
-	    GPIO_WriteBit(GPIOA, GPIO_Pin_6, Bit_SET);
-
-	    Motor_Forward();
+	    if (GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_0) == 0) Motor_Forward();
+	    else Motor_Brake();
 
 	}
 }
