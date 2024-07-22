@@ -139,9 +139,7 @@ void Motor_Forward()
     GPIOA -> BSHR =
             STBY_PIN |
             AIN2_PIN |
-            BIN2_PIN |
-            PWMA_PIN |
-            PWMB_PIN;
+            BIN2_PIN ;
     GPIOA -> BCR  =
             AIN1_PIN |
             BIN1_PIN;
@@ -150,32 +148,15 @@ void Motor_Forward()
 
 void Motor_Back()
 {
-    GPIO_SetBits(GPIOA, BIN1_PIN || AIN1_PIN);
-    GPIO_ResetBits(GPIOA, AIN2_PIN || PWMB_PIN);
-}
-
-void Motor_Right()
-{
-    GPIO_SetBits(GPIOA, AIN2_PIN || BIN1_PIN || PWMB_PIN);
-    GPIO_ResetBits(GPIOA, AIN1_PIN);
-}
-
-void Motor_Left()
-{
-    GPIO_SetBits(GPIOA, AIN2_PIN || PWMB_PIN || AIN1_PIN);
-    GPIO_ResetBits(GPIOA, BIN1_PIN);
-}
-
-void Motor_TurnRight()
-{
-    GPIO_SetBits(GPIOA, BIN1_PIN || PWMB_PIN);
-    GPIO_ResetBits(GPIOA, AIN2_PIN || AIN1_PIN);
-}
-
-void Motor_TurnLeft()
-{
-    GPIO_SetBits(GPIOA, AIN2_PIN || AIN1_PIN);
-    GPIO_ResetBits(GPIOA, BIN1_PIN || PWMB_PIN);
+    GPIOA -> BSHR =
+            STBY_PIN |
+            AIN1_PIN |
+            BIN1_PIN |
+            PWMA_PIN |
+            PWMB_PIN;
+    GPIOA -> BCR  =
+            AIN2_PIN |
+            BIN2_PIN;
 }
 
 void Motor_Brake()
@@ -185,9 +166,7 @@ void Motor_Brake()
                 AIN1_PIN |
                 AIN2_PIN |
                 BIN1_PIN |
-                BIN2_PIN |
-                PWMA_PIN |
-                PWMB_PIN;
+                BIN2_PIN ;
 }
 
 /************** Line Angle **********************
@@ -198,53 +177,91 @@ void Motor_Brake()
  *
  */
 
-int Line_Angle()
+#define IS_0SENCER  0b00000001 // LEFT
+#define IS_1SENCER  0b00000010
+#define IS_2SENCER  0b00000100
+#define IS_3SENCER  0b00001000
+#define IS_4SENCER  0b00010000
+#define IS_5SENCER  0b00100000
+#define IS_6SENCER  0b01000000
+#define IS_7SENCER  0b10000000 // RIGHT
+int16_t Line_Angle()
 {
-    uint8_t getSencer = GPIO_ReadInputData(GPIOB) & 0x00FF;
-    switch(getSencer)
-    {
-        case 0b00000000:
-        case 0b00011000:
-            return 90;
-            break;
-        // Left
-        case 0b00010000:
-            return 85;
-            break;
-        case 0b00110000:
-        case 0b11110000:
-            return 0;
-            break;
-        // Right
-        case 0b00001000:
-            return 95;
-            break;
-        case 0b00001111:
-            return 180;
-            break;
-        default:
-            return -1;
-            break;
-    }
-
+    uint8_t getSencer = ~(GPIO_ReadInputData(GPIOB) & 0x00FF);
+    printf("getSencer : %x\r\n", getSencer);
+    if(getSencer == 0x00) return -1;
+    if(getSencer == 0xFF) return 90;
+    if((getSencer & IS_7SENCER) == IS_7SENCER) return 180;
+    if((getSencer & IS_0SENCER) == IS_0SENCER) return 0;
+    if((getSencer & IS_6SENCER) == IS_6SENCER) return 150;
+    if((getSencer & IS_1SENCER) == IS_1SENCER) return 30;
+    if((getSencer & IS_5SENCER) == IS_5SENCER) return 120;
+    if((getSencer & IS_2SENCER) == IS_2SENCER) return 60;
+    if((getSencer & IS_4SENCER) == IS_4SENCER) return 100;
+    if((getSencer & IS_3SENCER) == IS_3SENCER) return 80;
+    return 90;
 }
+
+#define RIGHT   1
+#define LEFT    0
+#define SCALE_FACTOR    100
+#define PWM_PULSE_MAX   (MOTOR_ARR * SCALE_FACTOR) * 80 / SCALE_FACTOR
+
+uint16_t Angle_To_Pulse(int16_t angle, uint8_t dir) {
+    if(angle < 0) angle = 90;
+    uint16_t pulse = (angle * PWM_PULSE_MAX * SCALE_FACTOR) / (180 * SCALE_FACTOR);
+    if(dir == RIGHT) pulse = PWM_PULSE_MAX - pulse;
+
+    printf("pulse : %d \r\n", pulse);
+    return pulse;
+}
+
+void Motor_Pulse(uint16_t motor1_pulse, uint16_t motor2_pulse) {
+    TIM_SetCompare2(
+            TIM2,
+            motor2_pulse
+    );
+    TIM_SetCompare3(
+            TIM2,
+            motor1_pulse
+    );
+}
+
 
 int main(void)
 {
 	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
 	SystemCoreClockUpdate();
 	Delay_Init();
+	USART_Printf_Init(115200);
+    printf("SystemClk:%d\r\n", SystemCoreClock);
+    printf( "ChipID:%08x\r\n", DBGMCU_GetCHIPID() );
 
 	GPIO_Sencer_INIT();
 	GPIO_Motor_INIT();
 	GPIO_LED_INIT();
 
+	int16_t angle;
+	uint16_t pulse_r;
+	uint16_t pulse_l;
+
 	while(1)
     {
+	    GPIO_SetBits(GPIOC, LED_PIN);
 
-	    if (GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_0) == 0) Motor_Forward();
-	    else Motor_Brake();
+	    angle = Line_Angle();
+	    pulse_r = Angle_To_Pulse(angle, RIGHT);
+	    pulse_l = Angle_To_Pulse(angle, LEFT);
 
+	    printf("Line Angle: %d\r\n", angle);
+
+	    Motor_Pulse(pulse_l, pulse_r);
+	    if(angle < 0) {
+	        Motor_Brake();
+	    }
+	    else Motor_Forward();
+
+	    Delay_Ms(20);
 	}
 }
 
