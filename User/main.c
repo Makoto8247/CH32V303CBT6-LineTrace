@@ -185,21 +185,46 @@ void Motor_Brake()
 #define IS_5SENCER  0b00100000
 #define IS_6SENCER  0b01000000
 #define IS_7SENCER  0b10000000 // RIGHT
+static const int16_t ANGLE_TABLE[8] = {
+        0,
+        26,
+        51,
+        77,
+        103,
+        129,
+        154,
+        180
+};
 int16_t Line_Angle()
 {
-    uint8_t getSencer = ~(GPIO_ReadInputData(GPIOB) & 0x00FF);
+    uint8_t getSencer = GPIO_ReadInputData(GPIOB) & 0x00FF;
     printf("getSencer : %x\r\n", getSencer);
-    if(getSencer == 0x00) return -1;
-    if(getSencer == 0xFF) return 90;
-    if((getSencer & IS_7SENCER) == IS_7SENCER) return 180;
-    if((getSencer & IS_0SENCER) == IS_0SENCER) return 0;
-    if((getSencer & IS_6SENCER) == IS_6SENCER) return 150;
-    if((getSencer & IS_1SENCER) == IS_1SENCER) return 30;
-    if((getSencer & IS_5SENCER) == IS_5SENCER) return 120;
-    if((getSencer & IS_2SENCER) == IS_2SENCER) return 60;
-    if((getSencer & IS_4SENCER) == IS_4SENCER) return 100;
-    if((getSencer & IS_3SENCER) == IS_3SENCER) return 80;
-    return 90;
+    if(getSencer == 0x00) return 90;
+    if(getSencer == 0xFF) return -1;
+    int16_t start = 0, goal = 0;
+    for(uint8_t i=0; i < 8; i++)
+    {
+
+        if(GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_0 << i))
+        {
+            start = ANGLE_TABLE[i];
+            break;
+        }
+    }
+    for(uint8_t i=7; i >= 0; i--)
+    {
+        if(GPIO_ReadInputDataBit(GPIOB, GPIO_Pin_0 << i))
+        {
+            goal = ANGLE_TABLE[i];
+            break;
+        }
+    }
+    int16_t centerDistance = goal - start;
+    centerDistance /= 2;
+    centerDistance += start;
+    printf("centerDistance: %d\r\n", centerDistance);
+
+    return centerDistance;
 }
 
 #define RIGHT   1
@@ -207,7 +232,8 @@ int16_t Line_Angle()
 #define SCALE_FACTOR    100
 #define PWM_PULSE_MAX   (MOTOR_ARR * SCALE_FACTOR) * 80 / SCALE_FACTOR
 
-uint16_t Angle_To_Pulse(int16_t angle, uint8_t dir) {
+uint16_t Angle_To_Pulse(int16_t angle, uint8_t dir)
+{
     if(angle < 0) angle = 90;
     uint16_t pulse = (angle * PWM_PULSE_MAX * SCALE_FACTOR) / (180 * SCALE_FACTOR);
     if(dir == RIGHT) pulse = PWM_PULSE_MAX - pulse;
@@ -255,13 +281,13 @@ int main(void)
 
 	    printf("Line Angle: %d\r\n", angle);
 
-	    Motor_Pulse(pulse_l, pulse_r);
+	    Motor_Pulse(pulse_r, pulse_l);
 	    if(angle < 0) {
 	        Motor_Brake();
 	    }
 	    else Motor_Forward();
 
-	    Delay_Ms(20);
+	    //Delay_Ms(500);
 	}
 }
 
