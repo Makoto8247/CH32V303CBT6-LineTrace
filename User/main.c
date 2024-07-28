@@ -20,6 +20,8 @@
 
 #include "debug.h"
 
+#define RIGHT   1
+#define LEFT    2
 
 
 void GPIO_Sencer_INIT(void)
@@ -146,19 +148,6 @@ void Motor_Forward()
 
 }
 
-void Motor_Back()
-{
-    GPIOA -> BSHR =
-            STBY_PIN |
-            AIN1_PIN |
-            BIN1_PIN |
-            PWMA_PIN |
-            PWMB_PIN;
-    GPIOA -> BCR  =
-            AIN2_PIN |
-            BIN2_PIN;
-}
-
 void Motor_Brake()
 {
     GPIOA -> BSHR =
@@ -169,6 +158,30 @@ void Motor_Brake()
                 BIN2_PIN ;
 }
 
+void Motor_Turn(uint8_t turn) {
+    if (turn == RIGHT) {
+        GPIOA -> BSHR =
+                STBY_PIN |
+                AIN1_PIN |
+                BIN2_PIN |
+                PWMA_PIN |
+                PWMB_PIN;
+        GPIOA -> BCR  =
+                AIN2_PIN |
+                BIN1_PIN;
+    } else {
+        GPIOA -> BSHR =
+                STBY_PIN |
+                AIN2_PIN |
+                BIN1_PIN |
+                PWMA_PIN |
+                PWMB_PIN;
+        GPIOA -> BCR  =
+                AIN1_PIN |
+                BIN2_PIN;
+    }
+}
+
 /************** Line Angle **********************
  *
  * This function expresses the degree of curvature of the line in degrees.
@@ -177,14 +190,6 @@ void Motor_Brake()
  *
  */
 
-#define IS_0SENCER  0b00000001 // LEFT
-#define IS_1SENCER  0b00000010
-#define IS_2SENCER  0b00000100
-#define IS_3SENCER  0b00001000
-#define IS_4SENCER  0b00010000
-#define IS_5SENCER  0b00100000
-#define IS_6SENCER  0b01000000
-#define IS_7SENCER  0b10000000 // RIGHT
 static const int16_t ANGLE_TABLE[8] = {
         0,
         26,
@@ -195,9 +200,8 @@ static const int16_t ANGLE_TABLE[8] = {
         154,
         180
 };
-int16_t Line_Angle()
+int16_t Line_Angle(uint8_t getSencer)
 {
-    uint8_t getSencer = GPIO_ReadInputData(GPIOB) & 0x00FF;
     printf("getSencer : %x\r\n", getSencer);
     if(getSencer == 0x00) return 90;
     if(getSencer == 0xFF) return -1;
@@ -227,8 +231,6 @@ int16_t Line_Angle()
     return centerDistance;
 }
 
-#define RIGHT   1
-#define LEFT    0
 #define SCALE_FACTOR    100
 #define PWM_PULSE_MAX   (MOTOR_ARR * SCALE_FACTOR) * 80 / SCALE_FACTOR
 
@@ -253,6 +255,14 @@ void Motor_Pulse(uint16_t motor1_pulse, uint16_t motor2_pulse) {
     );
 }
 
+uint8_t Count_Sencer(uint8_t sencer) {
+    uint8_t cnt = 0;
+    for(uint8_t i=0; i < 4; i++) {
+        if((sencer & (0b0001 << i)) > 0) cnt++;
+    }
+    return cnt;
+}
+
 
 int main(void)
 {
@@ -270,24 +280,51 @@ int main(void)
 	int16_t angle;
 	uint16_t pulse_r;
 	uint16_t pulse_l;
+	uint8_t get_sencer;
+	uint8_t right_sencer;
+	uint8_t left_sencer;
+	uint8_t is_turn = 0;
 
 	while(1)
     {
+	    is_turn = 0;
+
 	    GPIO_SetBits(GPIOC, LED_PIN);
 
-	    angle = Line_Angle();
-	    pulse_r = Angle_To_Pulse(angle, RIGHT);
-	    pulse_l = Angle_To_Pulse(angle, LEFT);
+	    get_sencer = GPIO_ReadInputData(GPIOB) & 0x00FF;
 
+	    angle = Line_Angle(get_sencer);
 	    printf("Line Angle: %d\r\n", angle);
 
-	    Motor_Pulse(pulse_r, pulse_l);
+	    right_sencer = Count_Sencer(get_sencer & 0x0F);
+	    left_sencer = Count_Sencer((get_sencer & 0xF0)>>4);
+
 	    if(angle < 0) {
 	        Motor_Brake();
 	    }
-	    else Motor_Forward();
+	    else {
+	        if(right_sencer >= 3) {
+	            angle = 90 - 60;
+	            is_turn = RIGHT;
+	        }
+	        else if (left_sencer >= 3) {
+                angle = 90 + 60;
+                is_turn = LEFT;
+            }
 
-	    //Delay_Ms(500);
+
+            if(is_turn > 0){
+                pulse_r = Angle_To_Pulse(angle, RIGHT);
+                pulse_l = Angle_To_Pulse(angle, LEFT);
+                Motor_Pulse(pulse_r, pulse_l);
+                Motor_Turn(is_turn);
+            } else {
+                pulse_r = Angle_To_Pulse(angle, RIGHT);
+                pulse_l = Angle_To_Pulse(angle, LEFT);
+                Motor_Pulse(pulse_r, pulse_l);
+                Motor_Forward();
+            }
+	    }
 	}
 }
 
