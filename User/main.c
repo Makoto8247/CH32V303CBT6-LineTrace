@@ -278,21 +278,15 @@ int main(void)
 	GPIO_LED_INIT();
 
 	int16_t angle;
-	uint16_t pulse_r;
-	uint16_t pulse_l;
-	uint8_t get_sencer;
-	uint8_t right_sencer;
-	uint8_t left_sencer;
-	uint8_t is_turn = 0;
+	uint16_t pulse_r, pulse_l;
+	uint8_t get_sencer, right_sencer, left_sencer, is_turn = 0;
 
 	while(1)
-    {
+	{
 	    is_turn = 0;
-
 	    GPIO_SetBits(GPIOC, LED_PIN);
 
 	    get_sencer = GPIO_ReadInputData(GPIOB) & 0x00FF;
-
 	    angle = Line_Angle(get_sencer);
 	    printf("Line Angle: %d\r\n", angle);
 
@@ -301,29 +295,26 @@ int main(void)
 
 	    if(angle < 0) {
 	        Motor_Brake();
+	        continue;
 	    }
-	    else {
-	        if(right_sencer >= 3) {
-	            angle = 90 - 60;
-	            is_turn = RIGHT;
-	        }
-	        else if (left_sencer >= 3) {
-                angle = 90 + 60;
-                is_turn = LEFT;
-            }
 
+	    if(right_sencer >= 3) {
+	        angle = 90 - 30;
+	        is_turn = RIGHT;
+	    }
+	    else if (left_sencer >= 3) {
+	        angle = 90 + 30;
+	        is_turn = LEFT;
+	    }
 
-            if(is_turn > 0){
-                pulse_r = Angle_To_Pulse(angle, RIGHT);
-                pulse_l = Angle_To_Pulse(angle, LEFT);
-                Motor_Pulse(pulse_r, pulse_l);
-                Motor_Turn(is_turn);
-            } else {
-                pulse_r = Angle_To_Pulse(angle, RIGHT);
-                pulse_l = Angle_To_Pulse(angle, LEFT);
-                Motor_Pulse(pulse_r, pulse_l);
-                Motor_Forward();
-            }
+	    pulse_r = Angle_To_Pulse(angle, RIGHT);
+	    pulse_l = Angle_To_Pulse(angle, LEFT);
+	    Motor_Pulse(pulse_r, pulse_l);
+
+	    if(is_turn > 0){
+	        Motor_Turn(is_turn);
+	    } else {
+	        Motor_Forward();
 	    }
 	}
 }
